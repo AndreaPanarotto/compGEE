@@ -1,0 +1,237 @@
+---
+title: "CompGEE"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{CompGEE}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## The "compGEE" package
+
+The package contains functions for longitudinal compositional data analysis. The method is based on a multiplicative model by Firth and Sammut (2023) to represent data directly on the simplex, without logratio transformations. The longitudinal aspect is modeled via Generalized Estimating Equations (Liang and Zeger, 1986).
+
+In this vignette, we set up a simulation study to show a possible usage of the package.
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+# devtools::install_github("AndreaPanarotto/compGEE") # you need devtools!
+library("compGEE")
+```
+
+We set the number of series, the simplex size, the number of covariates (excluded the intercept) and the same length for all the series (for simplicity, since this is allowed to change).
+
+```{r}
+NN <- 50
+DD <- 5
+PP <- 3
+TT <- 5
+series_lengths <- rep(TT, NN)
+```
+
+We simulate by fixing a $D \times (P+1)$ matrix of regression parameters. For identifiability, we assume the *reference constraint*, that is, $\beta_{Dp}=0$ for all $p$. An alternative is the *sum constraint*, that is, $\sum_{d=1}^D \beta_{dp}=0$ for all $p$. Both options are available in the main function of the package.
+
+```{r}
+# sum constraint
+# beta <- matrix(c(-0.5, 1  , -0.5,  0  ,
+#                  -0.5, 0.5,  1  , -1  ,
+#                  0.5,  0  , -1  ,  0.5,
+#                  0.5, -1  ,  0.5, -0.5,
+#                  0  , -0.5,  0  ,  1
+#                  ),
+#                DD,
+#                byrow = TRUE)
+# reference constraint
+beta <- matrix(c( 0  ,  2  ,  0  , -0.5,
+                 -0.5,  1  ,  1  , -2  ,
+                  0  ,  0  , -1.5, -1  ,
+                  0.5, -0.5,  0.5, -1.5,
+                  0  ,  0  ,  0  ,  0
+                ),
+                DD,
+                byrow = TRUE)
+```
+
+We want now to generate the observations. First, we generate the covariates for each time observation of each series. We simply sample them as random, adding the intercept.
+
+```{r}
+set.seed(254) # picking the seed as the Pokédex # of your favorite Pokémon is crucial for reproducibility!
+# generation covariates
+x_list <- vector("list", NN)
+# all random
+for (ii in 1:NN) {
+    x_list[[ii]] <- cbind(1, matrix(rnorm(PP * series_lengths[ii]), ncol = PP))
+}
+```
+
+We then generate the observation using the multiplicative model of Firth and Sammut (2023). A vector $y_{j}$ has generic element
+$${y}_{jd} = {\pi}_{jd} u_{jd}\,, $$
+where $\boldsymbol{\pi}_j = (\pi_{j1},\,\ldots\,,\,\pi_{jD})$ is computed according to the following *compositional logit model*
+$${\pi}_{jd} = \frac{\exp\mathbf{x}_j^\top\boldsymbol{\beta_d}}{\sum_{d^\prime=1}^D\exp\mathbf{x}_j^\top\boldsymbol{\beta_{d^\prime}}}\, $$
+with $\mathbf{x}_j$ vector of covariates corresponding to $\mathbf{y}_j$, and error $\mathbf{u}_j = (u_{j1},\,\ldots\,,\,u_{jD})$ with mean $(1,\,\ldots\,,\,1)$ and covariance matrix $\boldsymbol{\Phi}$. One should notice that the observations $y_{j1},\,\ldots\,,\, y_{jD}$ do not sum to 1, but it is not a problem since the model accounts for the count totals. 
+
+The following function allows us to compute the compositional means $\boldsymbol{\pi}_j$.
+
+```{r}
+softmax <- function(eta)
+{
+    pi <- exp(eta - max(eta)) + 1e-10 # correction
+    return(pi / sum(pi))
+}
+```
+
+
+We adopt two simulation settings. In the first one, elements of the time series are sampled independently. Each error element is sampled from a $\mathcal{G}amma(3,3)$. In the second, we assume error correlation to induce correlation in the series themselves. After sampling $u_{0d}$ from a $\mathcal{G}amma(3,3)$, we compute 
+$$u_{t+1\, d} = \max\left(0,\ 1 + \rho (u_{td} - 1) + \sqrt{1 - \rho^2} (\zeta_{td} - 1)\right),\ \quad \zeta_{td}\sim \mathcal{G}amma(3,3). $$
+
+The right side alone ensures mean and covariance matrix to be marginally constant, while inducing the correlation. However, it does not ensure stability of the domain, so we give up a little on that assumptions by setting to 0 possible negative samples. This also allows us to show one of the main features of the model, that is, working with 0 observations, which is usually a problem of logratio methods. Once $\boldsymbol{\pi}_j$ and $\mathbf{u}_j$ have been computed and sampled, their element-wise product provides the observed values $\mathbf{y}_j$.
+
+```{r}
+# generation observations
+pi_list <- vector("list", NN)
+y_indip <- vector("list", NN)
+y_corr <- vector("list", NN)
+for (ii in 1:NN) {
+    pi_loc <- matrix(NA, series_lengths[ii], DD)
+    y_out <- matrix(NA, series_lengths[ii], DD)
+    y_cc <- matrix(NA, series_lengths[ii], DD)
+    xx <- x_list[[ii]]
+    u_corr <-  rgamma(DD, 3, 3)
+    rho <- 0.8
+    for (jj in 1:series_lengths[ii]) {
+        eta <- beta %*% xx[jj, ]
+        pi_loc[jj, ] <- softmax(eta)
+        new_err <-  rgamma(DD, 3, 3)
+        y_out[jj, ] <- pi_loc[jj, ] * new_err
+        u_corr <- pmax(1 + rho * (u_corr - 1) + sqrt(1 - rho^2) * (new_err - 1), 0)
+        y_cc[jj, ] <- pi_loc[jj, ] * u_corr
+    }
+    pi_list[[ii]] <- pi_loc
+    y_indip[[ii]] <- y_out
+    y_corr[[ii]] <- y_cc
+}
+```
+
+We initialize the parameters to estimate to 0 and provide some other algorithm parameters. The reference constraint `ref` is given in `criterion` and the `jack` parameter makes the algorithm provide a jackknife estimate and its variance, useful for providing confidence intervals. The one-step jackknife procedure from Lipsitz et al. (1990) is used.
+
+```{r}
+beta_0 <- matrix(0, DD, (PP + 1))
+rho_0 <- 0
+max.iter <- 100
+eps <- 1e-6
+
+starttime <- Sys.time()
+fit_indip <- compGeeFit(
+    y_indip,
+    x_list,
+    beta_0,
+    rho_0,
+    Phi = NULL,
+    criterion = "ref",
+    jack = TRUE,
+    max.iter = max.iter,
+    eps = eps
+)
+print(Sys.time() - starttime)
+starttime <- Sys.time()
+fit_corr <- compGeeFit(
+    y_corr,
+    x_list,
+    beta_0,
+    rho_0,
+    Phi = NULL,
+    criterion = "ref",
+    jack = TRUE,
+    max.iter = max.iter,
+    eps = eps
+)
+print(Sys.time() - starttime)
+```
+
+First, we see that the model is able to detect the presence (or absence) of correlation.
+
+```{r}
+print(fit_indip$rho_hat)
+print(fit_corr$rho_hat)
+```
+
+Then, we can compare the estimates of the regression parameters with respect to the true parameters, and compute the jackknife confidence intervals at a certain level $\alpha$.
+
+```{r}
+print(beta)
+print(fit_indip$Beta_hat)
+print(fit_corr$Beta_hat)
+```
+
+The point-wise estimates seem good.
+
+```{r}
+alpha <- 0.05
+zz <- qnorm(1-alpha/2)
+sdb_indip <- sqrt(diag(fit_indip$Var_jack))
+sdb_indip <- matrix(sdb_indip, DD, byrow = TRUE)
+sdb_corr <- sqrt(diag(fit_corr$Var_jack))
+sdb_corr <- matrix(sdb_corr, DD, byrow = TRUE)
+lower_indip <- fit_indip$Beta_jack - zz * sdb_indip
+upper_indip <- fit_indip$Beta_jack + zz * sdb_indip
+lower_corr <- fit_corr$Beta_jack - zz * sdb_corr
+upper_corr <- fit_corr$Beta_jack + zz * sdb_corr
+
+for (dd in 1:(DD-1)) {
+    for (pp in 1:(PP + 1)) {
+        cat(
+            sprintf("%.2f", round(fit_indip$Beta_jack[dd, pp], 2)),
+            " (",
+            sprintf("%.2f", round(lower_indip[dd, pp], 2)),
+            ", ",
+            sprintf("%.2f", round(upper_indip[dd, pp], 2)),
+            ") ",
+            sep = ""
+        )
+        if ((beta[dd, pp] >= lower_indip[dd, pp]) &&
+            (beta[dd, pp] <= upper_indip[dd, pp]))
+        {
+            cat("V\t\t")
+        } else
+        {
+            cat("X\t\t")
+        }
+    }
+    cat("\n")
+}
+for (dd in 1:(DD-1)) {
+    for (pp in 1:(PP + 1)) {
+        cat(
+            sprintf("%.2f", round(fit_corr$Beta_jack[dd, pp], 2)),
+            " (",
+            sprintf("%.2f", round(lower_corr[dd, pp], 2)),
+            ", ",
+            sprintf("%.2f", round(upper_corr[dd, pp], 2)),
+            ") ",
+            sep = ""
+        )
+        if ((beta[dd, pp] >= lower_corr[dd, pp]) &&
+            (beta[dd, pp] <= upper_corr[dd, pp]))
+        {
+            cat("V\t\t")
+        } else
+        {
+            cat("X\t\t")
+        }
+    }
+    cat("\n")
+}
+```
+
+And finally, all the confidence intervals cover the true estimate -- lucky case, but nominal coverage is obtained when multiple esperiments are repeated. 
+
+### References
+
+* Firth, D. and Sammut, F. (2023) Analysis of composition on the original scale of measurement. arXiv preprint arXiv:2312.10548.
+* Lipsitz, S. R., Laird, N. M. and Harrington, D. P. (1990) Using the jackknife to estimate the variance of regression estimators from repeated measures studies. Communications in Statistics - Theory and Methods 19(3), 821–845.

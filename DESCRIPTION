@@ -1,0 +1,14 @@
+Package: compGEE
+Type: Package
+Title: Longitudinal compositional data analysis via Generalized Estimating Equations
+Version: 1.0
+Date: 2025-03-07
+Author: Andrea Panarotto
+Maintainer: Andrea Panarotto <andrea.panarotto@unipd.it>
+Description: The package contains functions for longitudinal compositional data analysis. The method is based on a multiplicative model by Firth and Sammut (2023) to represent data directly on the simplex, without logratio transformations. The longitudinal aspect is modeled via Generalized Estimating Equations (Liang and Zeger, 1986).
+License: GPL-3
+Encoding: UTF-8
+Imports: Matrix, MASS, stats
+VignetteBuilder: knitr
+Suggests: knitr, rmarkdown
+RoxygenNote: 7.3.2
