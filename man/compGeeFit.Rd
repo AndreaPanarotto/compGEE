@@ -10,8 +10,10 @@ compGeeFit(
   Beta_0,
   rho = 0,
   Phi = NULL,
-  criterion = c("ref", "sum"),
+  criterion = c("reference", "sum"),
   jack = FALSE,
+  return_fitted = FALSE,
+  return_residuals = FALSE,
   max.iter = 100,
   eps = 1e-06,
   burnin = NULL,
@@ -30,9 +32,13 @@ compGeeFit(
 
 \item{Phi}{Initial value for the error matrix.}
 
-\item{criterion}{Identifiability criterion for the regression parameters. See `Details`.}
+\item{criterion}{Identifiability criterion for the regression parameters. Should be "reference" or "sum" (or a substring of them). See `Details`.}
 
 \item{jack}{Boolean; whether to compute the 1-step jackknife estimate and variance of the estimate from Lipsitz et al. (1990).}
+
+\item{return_fitted}{Boolean; whether to return a list of fitted values.}
+
+\item{return_residuals}{Boolean; whether to return a list of residuals values.}
 
 \item{max.iter}{Maximum number of iterations of the estimation procedure.}
 
@@ -56,6 +62,8 @@ A list containing:
 \item{n_iter}{Number of performed iterations.}
 \item{time}{Computational time.}
 \item{alg.params}{Some of the input parameters.}
+\item{fitted}{If \code{return_fitted} is \code{TRUE}, a list of fitted values in the same format of Y_list.}
+\item{residuals}{If \code{return_residuals} is \code{TRUE}, a list of residuals in the same format of Y_list.}
 \item{Beta_jack}{If \code{jack} is \code{TRUE}, the jackknife estimates of the regression parameters.}
 \item{Var_jack}{If \code{jack} is \code{TRUE}, the estimated variance of the jackknife estimates.}
 }

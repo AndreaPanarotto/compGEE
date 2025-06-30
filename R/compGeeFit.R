@@ -8,7 +8,9 @@
 #' @param rho Initial value for the autoregressive correlation.
 #' @param Phi Initial value for the error matrix.
 #' @param jack Boolean; whether to compute the 1-step jackknife estimate and variance of the estimate from Lipsitz et al. (1990).
-#' @param criterion Identifiability criterion for the regression parameters. See `Details`.
+#' @param return_fitted Boolean; whether to return a list of fitted values.
+#' @param return_residuals Boolean; whether to return a list of residuals values.
+#' @param criterion Identifiability criterion for the regression parameters. Should be "reference" or "sum" (or a substring of them). See `Details`.
 #' @param max.iter Maximum number of iterations of the estimation procedure.
 #' @param eps Tolerance in update difference for convergence.
 #' @param burnin Number of iterations after which the update length of the Fisher's scoring step starts decaying. Default is at \code{max.iter} (= no decay).
@@ -34,6 +36,8 @@
 #' \item{n_iter}{Number of performed iterations.}
 #' \item{time}{Computational time.}
 #' \item{alg.params}{Some of the input parameters.}
+#' \item{fitted}{If \code{return_fitted} is \code{TRUE}, a list of fitted values in the same format of Y_list.}
+#' \item{residuals}{If \code{return_residuals} is \code{TRUE}, a list of residuals in the same format of Y_list.}
 #' \item{Beta_jack}{If \code{jack} is \code{TRUE}, the jackknife estimates of the regression parameters.}
 #' \item{Var_jack}{If \code{jack} is \code{TRUE}, the estimated variance of the jackknife estimates.}
 #' }
@@ -50,36 +54,41 @@ compGeeFit <- function(Y_list,
                        Beta_0,
                        rho = 0,
                        Phi = NULL,
-                       criterion = c("ref", "sum"),
+                       criterion = c("reference", "sum"),
                        jack = FALSE,
+                       return_fitted = FALSE,
+                       return_residuals = FALSE,
                        max.iter = 100,
                        eps = 1e-6,
                        burnin = NULL,
                        decay_factor = 1e-2,
                        verbose = 0)
 {
-    if (all(criterion == c("ref", "sum")) ||
+    if (all(criterion == c("reference", "sum")) ||
         (substr("ref", 0, nchar(criterion)) == criterion))
     {
-        fit.alg <- update_beta_extensive_0
+        criterion <- "ref"
     } else
     {
-        if ((substr("ref", 0, nchar(criterion)) == criterion))
+        if ((substr("sum", 0, nchar(criterion)) == criterion))
         {
-            fit.alg <- update_beta_extensive
+            criterion <- "sum"
         } else
         {
             stop("Invalid criterion.")
         }
     }
-    result <- fit.alg(
+    result <- fit_both(
         Y_list,
         X_list,
         Beta_0,
         rho,
         Phi,
+        criterion,
         FALSE,
-        # jackknife is done later
+        # jackknife is done later,
+        return_fitted,
+        return_residuals,
         max.iter,
         eps,
         burnin,
@@ -93,13 +102,14 @@ compGeeFit <- function(Y_list,
     NN <- length(Y_list)
     estimates <- vector("list", NN)
     for (ii in 1:NN) {
-        estimates[[ii]] <- fit.alg(Y_list[-ii],
+        estimates[[ii]] <- fit_both(Y_list[-ii],
                                    X_list[-ii],
                                    result$Beta_hat,
                                    result$rho_hat,
                                    result$Phi_hat,
-                                   TRUE,
-                                   1) # 1-step. Following parameters are not needed
+                                   criterion,
+                                   jack = TRUE,
+                                   max.iter = 1) # 1-step. Other parameters are not needed
     }
     
     b_overall <- result$Beta_hat
