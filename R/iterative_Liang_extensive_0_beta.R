@@ -130,6 +130,8 @@ fit_both <- function(Y_list,
         }
 
         lambda <- max(1 / max(Matrix::norm(matrix(upd), "M"), 1), 1e-6)
+        if(jack)
+            lambda <- 1 # not modified for the jackknife one-step
         # decay
         if (iter > burnin)
             lambda <- lambda * exp(-lambda_0 * (iter - burnin))
